@@ -1,0 +1,10 @@
+{
+  "name": "Safelight",
+  "short_name": "Safelight",
+  "description": "A real darkroom in your browser. Develop photos through modelled film stocks, on your own device.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#131110",
+  "theme_color": "#131110",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
