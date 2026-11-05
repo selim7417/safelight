@@ -62,6 +62,7 @@ The stocks are original models inspired by the character of classic emulsions. T
 - **Live film at full frame rate.** Each camera frame is uploaded to the GPU and developed through the same shader as a still. Measured on an Apple M1 with a simulated 1920 × 1080 camera, at a 1440 × 900 window on a 2× display: a steady 60 fps with no long tasks, with the film strip and histogram updating live.
 - **The camera stays off until you ask.** It only starts when you click Camera, and closing it stops every track, which turns the device's camera light off. A shot stores the untouched frame, so the film can still be changed afterwards.
 - **Large photos.** Full-size bitmaps stay out of React state and only three stay decoded at once. Photos over the GPU's texture limit are scaled to fit, and export buffers are freed straight away. A 6000 × 4000 test image exported in about 3 seconds.
+- **Fast first visit.** The roll uses tiny thumbnails and the first print develops from a light preview, while the full photo downloads behind it and swaps in without interrupting anything. That cuts sample images before the first picture from about 2.1 MB to about 145 KB. On a simulated 1 Mbit/s connection, with an uncompressed test server, the first print starts in about 4.5 seconds.
 - **Small bundle.** About 93 KB of gzipped JavaScript, with no 3D or image-processing library: the WebGL2 pipeline is hand-written.
 - **Accessible.** Sliders are real range inputs, every control has a name, everything has a keyboard path, and reduced-motion settings skip the reveal.
 
@@ -90,7 +91,7 @@ npm run test:e2e
 ```
 
 - **136 unit tests** cover every stock's curve (it never darkens as exposure rises, and it hits its mid-grey target), film behaviour (pushing builds contrast and costs latitude, negatives out-range slides), crop and rotation geometry, recipe codes, the ZIP writer and print layouts.
-- **96 end-to-end checks** run the production build with real mouse drags and real downloads, including whole-roll ZIP export, phone layout, offline use and a check that no request ever leaves the app's own origin. Crops and rotations are verified by reading the exported pixels, the test strip by measuring each band's brightness, and the camera with Chromium's simulated video device, including blocked and missing cameras and a full 36-frame roll.
+- **103 end-to-end checks** run the production build with real mouse drags and real downloads, including whole-roll ZIP export, phone layout, offline use and a check that no request ever leaves the app's own origin. Crops and rotations are verified by reading the exported pixels, the test strip by measuring each band's brightness, and the camera with Chromium's simulated video device, including blocked and missing cameras and a full 36-frame roll.
 
 ## Deploy it
 
@@ -101,6 +102,8 @@ The live site is on GitHub Pages. After committing a change, this publishes it t
 ```bash
 npm run deploy
 ```
+
+If you replace the sample photos, regenerate their light copies with `npm run samples`.
 
 ## Known limits
 

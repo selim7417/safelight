@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FilmRenderer, type TestStrip, type View } from '../gl/renderer';
 import { closeCamera, getLiveCamera, openCamera, type Facing, type LiveCamera } from '../lib/camera';
 import { DEFAULT_GEOMETRY, frameToSource, FULL_CROP, orientedSize, outputSize, type Affine, type Size } from '../lib/geometry';
@@ -260,12 +260,24 @@ export function Stage() {
 
   // Load the active photo into the GPU once it is decoded.
   const loadedRef = useRef<string | null>(null);
+  const loadedSharp = useRef(false);
   useEffect(() => {
     const r = rendererRef.current;
     if (!r || tool === 'camera' || !photo || photo.status !== 'ready') return;
     const bitmap = getBitmap(photo.id);
-    if (!bitmap || loadedRef.current === photo.id) return;
+    if (!bitmap) return;
+    if (loadedRef.current === photo.id) {
+      // The full photo has arrived behind a preview. Nothing else changes, even mid-reveal.
+      if (photo.sharp && !loadedSharp.current) {
+        loadedSharp.current = true;
+        r.setSource(bitmap, photo.width, photo.height);
+        r.setRecipe(photo.recipe);
+        schedule();
+      }
+      return;
+    }
     loadedRef.current = photo.id;
+    loadedSharp.current = !!photo.sharp;
     cancelAnimationFrame(animRef.current);
     r.setSource(bitmap, photo.width, photo.height);
     r.setRecipe(photo.recipe);
@@ -278,7 +290,7 @@ export function Stage() {
       setDevelopCaption(null);
       draw();
     }
-  }, [photo, tool, draw, runDevelop, setDeveloping]);
+  }, [photo, tool, draw, schedule, runDevelop, setDeveloping]);
 
   // Any change to the recipe re-develops instantly.
   useEffect(() => {
@@ -289,15 +301,22 @@ export function Stage() {
     schedule();
   }, [photo, photo?.recipe, tool, live, schedule]);
 
-  // Tools take over the whole frame, so they always start from the fitted view.
-  useEffect(() => {
+  // Lay the picture out around a tool's controls before the browser paints, so it never
+  // sits under them, even for a frame.
+  useLayoutEffect(() => {
+    const tools = toolsRef.current;
+    toolbarHeight.current = tools?.firstElementChild ? tools.offsetHeight : 0;
     if (tool === 'crop' || tool === 'test' || tool === 'camera') {
       zoomRef.current = { scale: null, cx: 0.5, cy: 0.5 };
       setZoomLabel(null);
     }
     if (tool !== 'compare') splitValue.current = 0.5;
+    draw();
+  }, [tool, draw]);
+
+  useEffect(() => {
     schedule();
-  }, [tool, photo?.geometry, testStep, testCount, cameraMode, schedule]);
+  }, [photo?.geometry, testStep, testCount, cameraMode, schedule]);
 
   // The camera: every video frame goes straight through the film.
   useEffect(() => {

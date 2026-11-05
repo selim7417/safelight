@@ -238,8 +238,45 @@ const sheet = await mob.locator('.export').boundingBox();
 check('phone: export sheet fits the screen width', sheet.width <= 390, `${sheet.width}`);
 await phone.close();
 
-// ── Shared helpers for the tools ──
+// ── First-time visitors ──
 const sharp = createRequire(join(ROOT, 'package.json'))('sharp');
+{
+  const firstCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  const f = await firstCtx.newPage();
+  const cdp = await firstCtx.newCDPSession(f);
+  await cdp.send('Network.enable');
+  // 1 Mbit/s, a slow connection. This server doesn't compress, so real hosting is quicker still.
+  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 125000, uploadThroughput: 60000 });
+  const requests = [];
+  f.on('request', (r) => requests.push(r.url()));
+  const started = Date.now();
+  await f.goto(URL_, { waitUntil: 'commit' });
+  await f.waitForSelector('.app[data-room="safelight"]', { timeout: 45000 });
+  const toTray = Date.now() - started;
+  check('first visit: the tray opens quickly on a slow connection', toTray < 9000, `${(toTray / 1000).toFixed(1)} s at 1 Mbit/s`);
+  const firstRequests = requests.filter((u) => u.includes('/samples/'));
+  check('first visit: the first print starts from the light preview', firstRequests.some((u) => u.includes('/preview/night-street.webp')));
+  check('first visit: full-size samples aren’t loaded for the roll', !firstRequests.some((u) => /samples\/(lake|reader|light-trails|cafe|taxis)\.jpg/.test(u)), `${firstRequests.length} sample requests`);
+  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await f.waitForSelector('.app[data-room="lit"]', { timeout: 30000 });
+  await f.waitForFunction(() => !document.querySelector('.develop-caption'), null, { timeout: 30000 });
+  check('first visit: the reveal finishes even as the full photo arrives', true);
+  await f.waitForFunction(() => performance.getEntriesByType('resource').some((r) => r.name.endsWith('/samples/night-street.jpg') && r.responseEnd > 0), null, { timeout: 20000 });
+  check('first visit: the full photo follows in the background', true);
+  const widths = await f.evaluate(() => [...document.querySelectorAll('.roll__item img')].map((i) => i.naturalWidth));
+  check('first visit: the roll uses tiny thumbnails', widths.length === 6 && widths.every((w) => w > 0 && w <= 240), widths.join(' '));
+  await f.waitForTimeout(500);
+  await f.click('button:has-text("Export")');
+  await f.waitForSelector('.export');
+  const [firstDl] = await Promise.all([f.waitForEvent('download', { timeout: 60000 }), f.click('button:has-text("Save this photo")')]);
+  const firstFile = join(OUT, 'sample-full.jpg');
+  await firstDl.saveAs(firstFile);
+  const firstMeta = await sharp(firstFile).metadata();
+  check('first visit: a sample still exports at full size', firstMeta.width === 2400 && firstMeta.height === 1600, `${firstMeta.width}×${firstMeta.height}`);
+  await firstCtx.close();
+}
+
+// ── Shared helpers for the tools ──
 const track = (p, label) => {
   p.on('console', (m) => m.type() === 'error' && errors.push(`${label}: ${m.text()}`));
   p.on('pageerror', (e) => errors.push(`${label}: ${e}`));

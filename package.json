@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "npm run build && node e2e/run.mjs",
     "docs": "npm run build && node scripts/capture-docs.mjs",
-    "deploy": "node scripts/deploy.mjs"
+    "deploy": "node scripts/deploy.mjs",
+    "samples": "node scripts/build-samples.mjs"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.3.0",

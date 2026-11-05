@@ -14,6 +14,10 @@ export interface Photo {
   name: string;
   /** Present for the bundled samples. */
   url?: string;
+  /** A light copy to develop from at once, while the full photo downloads behind it. */
+  preview?: string;
+  /** Whether the full-size photo has replaced the preview. */
+  sharp?: boolean;
   file?: File;
   credit?: string;
   previewUrl: string;
@@ -78,7 +82,8 @@ const SAMPLE = (file: string, name: string, credit: string, stock: string, extra
   id: `sample-${file}`,
   name,
   url: `${BASE}samples/${file}.jpg`,
-  previewUrl: `${BASE}samples/${file}.jpg`,
+  preview: `${BASE}samples/preview/${file}.webp`,
+  previewUrl: `${BASE}samples/thumbs/${file}.webp`,
   credit,
   width: 2400,
   height: 1600,
@@ -131,6 +136,7 @@ export function rollOf(photos: Photo[]): Photo[] {
 }
 
 let toastTimer = 0;
+const sharpening = new Set<string>();
 let cropStart: Geometry | null = null;
 
 const sameGeometry = (a: Geometry, b: Geometry) => JSON.stringify(a) === JSON.stringify(b);
@@ -144,22 +150,54 @@ export const useStore = create<State>((set, get) => {
   };
   const editOf = (p: Photo): Edit => ({ recipe: p.recipe, geometry: p.geometry });
 
+  /** Swaps a preview for the full photo, in the background. Export fetches its own copy if this fails. */
+  const sharpen = async (id: string) => {
+    if (sharpening.has(id)) return;
+    sharpening.add(id);
+    try {
+      const photo = get().photos.find((p) => p.id === id);
+      if (!photo || photo.sharp) return;
+      const full = await decodePhoto(photo);
+      if (!get().photos.some((p) => p.id === id)) {
+        full.close();
+        return;
+      }
+      const previous = bitmaps.get(id);
+      rememberBitmap(id, full);
+      previous?.close();
+      patchPhoto(id, { sharp: true, width: full.width, height: full.height });
+    } catch {
+      /* The preview stays on screen, which is still a working photo. */
+    } finally {
+      sharpening.delete(id);
+    }
+  };
+
   const load = async (id: string) => {
     const photo = get().photos.find((p) => p.id === id);
     if (!photo) return;
+    const light = !!photo.preview && !photo.sharp;
     if (photo.status === 'ready' && bitmaps.has(id)) {
       rememberBitmap(id, bitmaps.get(id)!);
+      if (light) void sharpen(id);
       return;
     }
     patchPhoto(id, { status: 'loading', error: undefined });
     try {
-      const bitmap = await decodePhoto(photo);
+      const bitmap = light ? await decodeImage(photo.preview!) : await decodePhoto(photo);
       if (!get().photos.some((p) => p.id === id)) {
         bitmap.close();
         return;
       }
       rememberBitmap(id, bitmap);
-      patchPhoto(id, { status: 'ready', width: bitmap.width, height: bitmap.height, thumb: photo.thumb ?? makeThumb(bitmap) });
+      // A preview is smaller than the photo it stands for, so it doesn't change the photo's size.
+      patchPhoto(id, {
+        status: 'ready',
+        width: light ? photo.width : bitmap.width,
+        height: light ? photo.height : bitmap.height,
+        thumb: photo.thumb ?? makeThumb(bitmap),
+      });
+      if (light) void sharpen(id);
     } catch {
       const type = photo.file?.name.split('.').pop()?.toUpperCase();
       patchPhoto(id, {
